@@ -20,7 +20,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 import config
-from concurrency import get_download_workers
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +60,13 @@ def _download_one(element_id, url: str, dest_dir: str, index: int) -> dict:
     return {"ok": False, "id": element_id, "url": url, "error": last_err}
 
 
-def download_batch(batch_elements: list) -> tuple[dict, list]:
+def download_batch(batch_elements: list, workers: int) -> tuple[dict, list]:
     """
     batch_elements: list of {"id":..., "urls":[...]}
+    workers: concurrency level to use for this call - the caller (pipeline.py)
+      decides this via concurrency.get_download_workers(first_batch=...),
+      since it's the one that knows whether anything else is running at the
+      same time.
     Returns:
       downloaded_map: {id: [(url, local_path), ...]}  (only successful ones)
       failed_list:    [{"id":..., "url":..., "error":...}, ...]
@@ -81,7 +84,6 @@ def download_batch(batch_elements: list) -> tuple[dict, list]:
     downloaded_map = {el["id"]: [] for el in batch_elements}
     failed_list = []
 
-    workers = get_download_workers()
     logger.info("Downloading %d urls with %d workers", len(tasks), workers)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:

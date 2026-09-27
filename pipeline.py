@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 import config
 import hf_sync
 from checkpoint import load_checkpoint, save_checkpoint
-from concurrency import get_embed_concurrency
+from concurrency import get_download_workers, get_embed_concurrency
 from downloader import download_batch
 from merge_dedupe import merge_and_filter
 
@@ -110,15 +110,19 @@ def run(input_json_path: str, use_hf: bool = True):
     # batch i.
     downloader_pool = ThreadPoolExecutor(max_workers=1)
 
-    def kick_off_download(batch_idx):
+    def kick_off_download(batch_idx, is_first):
         if batch_idx >= len(batches):
             return None
-        return downloader_pool.submit(download_batch, batches[batch_idx])
+        workers = get_download_workers(first_batch=is_first)
+        return downloader_pool.submit(download_batch, batches[batch_idx], workers)
 
     # Find the first not-yet-completed batch so we don't re-download batches
-    # that a previous, interrupted run already finished.
+    # that a previous, interrupted run already finished. Only THIS one
+    # download has nothing else competing with it, so it runs at the fast
+    # "first batch" pace; every batch after it overlaps with the previous
+    # batch's face-embedding step and uses the lighter pace.
     first_pending = next((i for i in range(len(batches)) if i not in completed), len(batches))
-    prefetch_future = kick_off_download(first_pending)
+    prefetch_future = kick_off_download(first_pending, is_first=True)
 
     for i, batch in enumerate(batches):
         if i in completed:
@@ -131,8 +135,8 @@ def run(input_json_path: str, use_hf: bool = True):
         agg["total_urls_failed"] += len(batch_failed)
 
         # Kick off the NEXT batch's download now, so it overlaps this batch's
-        # (CPU-bound) face-embedding step below.
-        prefetch_future = kick_off_download(i + 1)
+        # (CPU-bound) face-embedding step below - always at the lighter pace.
+        prefetch_future = kick_off_download(i + 1, is_first=False)
 
         batch_urls_attempted = sum(len(el["urls"]) for el in batch)
         agg["total_urls_attempted"] += batch_urls_attempted

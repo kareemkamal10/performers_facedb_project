@@ -39,6 +39,20 @@ if node_missing:
         check=True,
     )
 
+# ---- Chromium's shared-library dependencies. Kaggle's base image is
+# missing most of these (headless Chrome fails with "libatk-1.0.so.0: cannot
+# open shared object file" etc. without them), so install unconditionally -
+# apt skips anything already present, this is quick either way.
+subprocess.run(
+    ["bash", "-lc",
+     "apt-get update -qq && apt-get install -y -qq "
+     "libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 "
+     "libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 "
+     "libpangocairo-1.0-0 libpango-1.0-0 libcairo2 libnspr4 libnss3 "
+     "libxss1 libxtst4 fonts-liberation libgtk-3-0"],
+    check=True,
+)
+
 # ---- Node deps for the face-embedding worker (this also downloads Chromium
 # for Puppeteer - can take a couple of minutes the first time) ----
 subprocess.run(

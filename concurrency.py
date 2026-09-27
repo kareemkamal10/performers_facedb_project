@@ -9,12 +9,17 @@ import os
 import config
 
 
-def get_download_workers() -> int:
-    cpu = os.cpu_count() or 4
-    # I/O-bound work: scale past core count, but capped lower than a
-    # pure-download pipeline would use, since downloading now shares the
-    # machine with the face-embedding step running at the same time.
-    return min(cpu * 3, config.MAX_DOWNLOAD_WORKERS_CAP)
+def get_download_workers(first_batch: bool = False) -> int:
+    # I/O-bound work isn't limited by CPU core count - threads mostly sleep
+    # waiting on the network. The first batch has nothing else running yet,
+    # so it uses many more connections than every later batch, which
+    # downloads WHILE the previous batch's CPU-heavy face-embedding step is
+    # running.
+    return (
+        config.DOWNLOAD_WORKERS_FIRST_BATCH
+        if first_batch
+        else config.DOWNLOAD_WORKERS_OVERLAPPED
+    )
 
 
 def get_embed_concurrency() -> int:

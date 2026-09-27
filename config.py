@@ -27,7 +27,7 @@ EMBED_MODEL_PATH = os.path.join(FACE_EMBED_DIR, "w600k_mbf.onnx")
 NODE_SCRIPT_PATH = os.path.join(FACE_EMBED_DIR, "embed_batch.js")
 
 # ---- Batching ----
-BATCH_SIZE = 10_000  # fixed per project spec, not meant to be changed casually
+BATCH_SIZE = 5_000
 
 # ---- Downloading ----
 DOWNLOAD_MAX_RETRIES = 3
@@ -40,18 +40,24 @@ DOWNLOAD_RETRY_BACKOFF_BASE = 1.5  # seconds; backoff = base * 2**(attempt-1)
 DOWNLOAD_STAGGER_MIN_SECONDS = 0.05
 DOWNLOAD_STAGGER_MAX_SECONDS = 0.25
 
-# ---- Concurrency (auto-detected at runtime; capped here for safety) ----
-# Downloading is I/O-bound -> many more workers than CPU cores is fine, but
-# capped lower than a plain dedup pipeline would need, specifically because
-# batch i+1's download now has to share the CPU with batch i's face-embedding
-# step (below) running in the same window.
-MAX_DOWNLOAD_WORKERS_CAP = 32
+# ---- Concurrency ----
+# Downloading is I/O-bound (threads mostly sleep waiting on the network), so
+# it should NOT be scaled by CPU core count - a 4-core Kaggle session can
+# still hold hundreds of sockets open at once. Two fixed levels instead:
+#   - FIRST_BATCH: nothing else is running yet, so go as hard as is safe.
+#   - OVERLAPPED: every batch after the first downloads WHILE the previous
+#     batch is being face-embedded (a CPU-heavy headless-Chrome step), so
+#     it steps back to leave that room.
+DOWNLOAD_WORKERS_FIRST_BATCH = 128
+DOWNLOAD_WORKERS_OVERLAPPED = 48
 
 # Face detection + alignment + embedding runs inside a real headless Chrome
 # tab per image, via Puppeteer, so results match the browser search page
 # exactly (GPU/WebGPU is deliberately NOT used here - see README). Multiple
-# tabs run in parallel inside ONE shared browser instance; this cap is kept
-# conservative since each tab is far heavier than a plain CPU worker.
+# tabs run in parallel inside ONE shared browser instance; this cap IS tied
+# to CPU count (unlike downloading above) since each tab is a real CPU-bound
+# Chrome renderer process, kept conservative since each one is far heavier
+# than a plain CPU worker.
 MAX_EMBED_CONCURRENCY_CAP = 4
 
 # ---- Embedding storage precision ----
