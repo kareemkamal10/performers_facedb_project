@@ -1,0 +1,10 @@
+{
+  "name": "face-embed-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Batch face-embedding worker driven by pipeline.py - runs the exact browser detection/alignment/embedding code via headless Chromium",
+  "dependencies": {
+    "express": "^4.19.2",
+    "puppeteer": "^23.0.0"
+  }
+}

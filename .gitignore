@@ -1,0 +1,12 @@
+performers_data.json
+face_db_output/
+checkpoint.json
+checkpoint.json.tmp
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+face_embed/node_modules/
+face_embed/w600k_mbf.onnx
+face_embed/face_landmarker.task
+_embed_manifest.json
+_embed_output.json
