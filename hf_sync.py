@@ -63,6 +63,18 @@ def download_face_models_if_needed() -> None:
         logger.info("Fetched face_landmarker.task from the HF dataset")
 
 
+def download_result_file(filename: str) -> str:
+    """Fetches a single file that's already sitting under the result folder
+    on the dataset (e.g. face_db.json, excluded.json from a finished run)."""
+    _require_creds()
+    return hf_hub_download(
+        repo_id=config.HF_DATASET_REPO_ID,
+        repo_type="dataset",
+        filename=f"{config.HF_RESULT_FOLDER_NAME}/{filename}",
+        token=config.HF_TOKEN,
+    )
+
+
 def download_checkpoint_if_exists():
     _require_creds()
     try:

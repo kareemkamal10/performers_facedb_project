@@ -40,6 +40,8 @@ const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf-8"));
 const BASE_DIR = manifest.baseDir;
 const CONCURRENCY = Math.max(1, manifest.concurrency || 4);
 const items = manifest.items || [];
+const RECOVERY_MODE = !!manifest.recoveryMode;
+const MIN_FACE_CONFIDENCE = manifest.minFaceDetectionConfidence || 0.3;
 
 function mimeFor(fname) {
   const ext = path.extname(fname).toLowerCase();
@@ -113,7 +115,10 @@ async function main() {
     const page = await browser.newPage();
     page.on("pageerror", (err) => console.error("[browser error]", err.message));
     await page.goto(`http://localhost:${port}/build_page.html`, { waitUntil: "load" });
-    await page.evaluate(() => window.initModels());
+    await page.evaluate(
+      (opts) => window.initModels(opts),
+      RECOVERY_MODE ? { minFaceDetectionConfidence: MIN_FACE_CONFIDENCE } : undefined
+    );
     pages.push(page);
   }
 
@@ -132,7 +137,12 @@ async function main() {
       try {
         const buf = fs.readFileSync(filePath);
         const dataUrl = `data:${mimeFor(filePath)};base64,${buf.toString("base64")}`;
-        const result = await page.evaluate((url) => window.processImage(url), dataUrl);
+        const fnName = RECOVERY_MODE ? "processImageRecovery" : "processImage";
+        const result = await page.evaluate(
+          (fn, url) => window[fn](url),
+          fnName,
+          dataUrl
+        );
         if (result && result.ok) {
           if (!embeddingsById[id]) embeddingsById[id] = [];
           embeddingsById[id].push(result.embedding);

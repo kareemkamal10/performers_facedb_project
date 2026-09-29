@@ -74,5 +74,13 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "")
 # Separate folder on the dataset from the older dedup pipeline's result_output/
 HF_RESULT_FOLDER_NAME = "face_db_output"
 
+# ---- Recovery pass (excluded.json follow-up) ----
+# Used only by recovery.py, for elements that got no face on the first pass
+# (typically because the face is small relative to the frame, e.g. full-body
+# shots). Lower confidence + progressive top-crops (see build_page.html's
+# processImageRecovery) recover a meaningful chunk of these without risking
+# false positives on the much larger first-pass run.
+RECOVERY_MIN_FACE_CONFIDENCE = 0.3
+
 # ---- Logging ----
 LOG_LEVEL = "INFO"

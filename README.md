@@ -76,6 +76,26 @@ CPU/WASM, in both the build step and the search page.
    - `report.txt` — full run stats.
    - `failed_downloads.csv` — every URL that failed after 3 retries.
 
+## Recovery pass (topping up excluded.json)
+
+Some elements land in `excluded.json` with reason
+`no_successful_face_detection` even though the image is fine — usually a
+full-body shot where the face is clear to a human but small relative to the
+whole frame, which the default detector confidence rejects.
+
+`recovery.py` targets exactly those elements: it re-downloads just their
+images (deleted after the main run), retries detection with a lower
+confidence threshold (`config.RECOVERY_MIN_FACE_CONFIDENCE`) and
+progressively tighter top-crops of the image (see `build_page.html`'s
+`processImageRecovery`), and merges any newly successful embeddings into
+`face_db.json` — fetched fresh from the dataset, updated, and pushed back.
+Elements with reason `all_downloads_failed` are left alone (dead links
+almost always fail again).
+
+Run it with `kaggle_cell_recovery.py` (same shape as `kaggle_cell.py`, just
+calls `recovery.py` instead of `main.py`) any time after a full run — it's
+a small, one-off pass, safe to run repeatedly.
+
 ## What changed from the dedup pipeline
 
 - **Removed entirely**: `visual_dedup.py`, `quality.py`, `webp_analysis.py`,
