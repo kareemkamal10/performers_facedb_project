@@ -79,18 +79,31 @@ CPU/WASM, in both the build step and the search page.
 ## Recovery pass (topping up excluded.json)
 
 Some elements land in `excluded.json` with reason
-`no_successful_face_detection` even though the image is fine — usually a
-full-body shot where the face is clear to a human but small relative to the
-whole frame, which the default detector confidence rejects.
+`no_successful_face_detection` even though the image is fine — usually one
+of two patterns: the face is small relative to the whole frame (full-body
+shots, or just a torso-up shot where the face isn't very large), or the
+face is at a steep angle/profile rather than roughly frontal.
 
 `recovery.py` targets exactly those elements: it re-downloads just their
 images (deleted after the main run), retries detection with a lower
-confidence threshold (`config.RECOVERY_MIN_FACE_CONFIDENCE`) and
-progressively tighter top-crops of the image (see `build_page.html`'s
-`processImageRecovery`), and merges any newly successful embeddings into
-`face_db.json` — fetched fresh from the dataset, updated, and pushed back.
-Elements with reason `all_downloads_failed` are left alone (dead links
-almost always fail again).
+confidence threshold (`config.RECOVERY_MIN_FACE_CONFIDENCE` /
+`RECOVERY_MIN_FACE_PRESENCE_CONFIDENCE`) against several re-rendered
+versions of each image (see `build_page.html`'s `processImageRecovery`) —
+the image upscaled 1.5x/2x (helps a small-but-centered face), then
+progressively tighter top-crops (helps full-body shots specifically) —
+stopping at the first one that finds a face. Any newly successful
+embeddings are merged into `face_db.json`, fetched fresh from the dataset,
+updated, and pushed back. Elements with reason `all_downloads_failed` are
+left alone (dead links almost always fail again).
+
+**Known limitation**: a steep side-profile face may still not be recovered.
+The underlying detector and the ArcFace-style embedding model are both
+trained on roughly-frontal faces — even when a profile face IS detected,
+the 5-point alignment this project uses (eyes/nose/mouth) becomes unstable
+when the eyes aren't both clearly visible, which can produce a low-quality
+embedding rather than a clean failure. Lowering the confidence threshold
+recovers borderline/angled cases, but isn't a fix for the model's frontal-
+face assumption — some profile-only elements are expected to stay excluded.
 
 Run it with `kaggle_cell_recovery.py` (same shape as `kaggle_cell.py`, just
 calls `recovery.py` instead of `main.py`) any time after a full run — it's

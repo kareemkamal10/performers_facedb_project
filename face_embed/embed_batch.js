@@ -42,6 +42,7 @@ const CONCURRENCY = Math.max(1, manifest.concurrency || 4);
 const items = manifest.items || [];
 const RECOVERY_MODE = !!manifest.recoveryMode;
 const MIN_FACE_CONFIDENCE = manifest.minFaceDetectionConfidence || 0.3;
+const MIN_FACE_PRESENCE_CONFIDENCE = manifest.minFacePresenceConfidence || 0.3;
 
 function mimeFor(fname) {
   const ext = path.extname(fname).toLowerCase();
@@ -117,7 +118,12 @@ async function main() {
     await page.goto(`http://localhost:${port}/build_page.html`, { waitUntil: "load" });
     await page.evaluate(
       (opts) => window.initModels(opts),
-      RECOVERY_MODE ? { minFaceDetectionConfidence: MIN_FACE_CONFIDENCE } : undefined
+      RECOVERY_MODE
+        ? {
+            minFaceDetectionConfidence: MIN_FACE_CONFIDENCE,
+            minFacePresenceConfidence: MIN_FACE_PRESENCE_CONFIDENCE,
+          }
+        : undefined
     );
     pages.push(page);
   }

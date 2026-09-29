@@ -75,12 +75,14 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "")
 HF_RESULT_FOLDER_NAME = "face_db_output"
 
 # ---- Recovery pass (excluded.json follow-up) ----
-# Used only by recovery.py, for elements that got no face on the first pass
-# (typically because the face is small relative to the frame, e.g. full-body
-# shots). Lower confidence + progressive top-crops (see build_page.html's
-# processImageRecovery) recover a meaningful chunk of these without risking
-# false positives on the much larger first-pass run.
-RECOVERY_MIN_FACE_CONFIDENCE = 0.3
+# Used only by recovery.py, for elements that got no face on the first pass.
+# Two different failure modes get addressed (see build_page.html's
+# processImageRecovery): a face that's small relative to the frame (helped
+# by upscaling and top-crops), and a face near-profile or at an angle
+# (helped somewhat by a lower confidence bar, though a steep profile shot
+# may genuinely be undetectable/unalignable regardless - see README).
+RECOVERY_MIN_FACE_CONFIDENCE = 0.2
+RECOVERY_MIN_FACE_PRESENCE_CONFIDENCE = 0.2
 
 # ---- Logging ----
 LOG_LEVEL = "INFO"
