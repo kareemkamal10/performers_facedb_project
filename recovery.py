@@ -58,8 +58,8 @@ def _run_embedding_recovery(downloaded_map: dict) -> dict:
         "baseDir": config.FACE_EMBED_DIR,
         "concurrency": get_embed_concurrency(),
         "recoveryMode": True,
-        "minFaceDetectionConfidence": config.RECOVERY_MIN_FACE_CONFIDENCE,
-        "minFacePresenceConfidence": config.RECOVERY_MIN_FACE_PRESENCE_CONFIDENCE,
+        "minFaceDetectionConfidence": min(config.RECOVERY_MIN_FACE_CONFIDENCE, 0.1),
+        "minFacePresenceConfidence": min(config.RECOVERY_MIN_FACE_PRESENCE_CONFIDENCE, 0.1),
         "items": items,
     }
     manifest_path = os.path.join(config.KAGGLE_WORKING_DIR, "_recovery_manifest.json")
