@@ -144,6 +144,51 @@ window.processImage = async function (dataUrl) {
   return { ok: true, embedding: normed };
 };
 
+async function runRecoveryAttempt(source, w, h, label) {
+  let result;
+  try {
+    result = faceLandmarker.detect(source);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "face_detection_error",
+      detail: String(error && error.message ? error.message : error),
+      label,
+    };
+  }
+
+  if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
+    return { ok: false, reason: "no_face_detected", label };
+  }
+
+  try {
+    const landmarks = result.faceLandmarks[0];
+    const aligned = alignFace(source, landmarks, w, h);
+    const tensor = preprocess(aligned);
+    const feeds = {};
+    feeds[embedSession.inputNames[0]] = tensor;
+    const output = await embedSession.run(feeds);
+    const emb = output[embedSession.outputNames[0]].data;
+
+    let norm = 0;
+    for (let i = 0; i < emb.length; i++) norm += emb[i] * emb[i];
+    norm = Math.sqrt(norm);
+    if (!Number.isFinite(norm) || norm === 0) {
+      return { ok: false, reason: "invalid_embedding", label };
+    }
+
+    const normed = Array.from(emb).map((v) => v / norm);
+    return { ok: true, embedding: normed, label };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "embedding_error",
+      detail: String(error && error.message ? error.message : error),
+      label,
+    };
+  }
+}
+
 // Recovery-mode variant: used only for the excluded.json follow-up pass.
 // Tries the full image first (same as processImage), and if no face is
 // found, retries on progressively tighter top-crops of the image - this is
@@ -151,14 +196,25 @@ window.processImage = async function (dataUrl) {
 // small, relative to the whole frame, for the detector's default confidence
 // threshold (also lowered separately, via initModels' options, for this pass).
 window.processImageRecovery = async function (dataUrl) {
-  const img = await new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = reject;
-    image.src = dataUrl;
-  });
+  let img;
+  try {
+    img = await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("image_decode_failed"));
+      image.src = dataUrl;
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      diagnostics: {
+        failureReason: "image_decode_error",
+        detail: String(error && error.message ? error.message : error),
+      },
+    };
+  }
 
-  const attempts = [{ source: img, w: img.width, h: img.height }];
+  const attempts = [{ source: img, w: img.width, h: img.height, label: "full" }];
 
   // Small-but-not-top-anchored faces (e.g. a torso-up mirror selfie where
   // the face just isn't very large in frame): re-feeding the detector a
@@ -171,7 +227,7 @@ window.processImageRecovery = async function (dataUrl) {
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    attempts.push({ source: canvas, w: canvas.width, h: canvas.height });
+    attempts.push({ source: canvas, w: canvas.width, h: canvas.height, label: `scale_${factor}x` });
   }
 
   // Full-body shots specifically: the face sits in the top portion of the
@@ -184,29 +240,70 @@ window.processImageRecovery = async function (dataUrl) {
     canvas
       .getContext("2d")
       .drawImage(img, 0, 0, img.width, cropH, 0, 0, img.width, cropH);
-    attempts.push({ source: canvas, w: img.width, h: cropH });
+    attempts.push({ source: canvas, w: img.width, h: cropH, label: `top_${fraction}` });
   }
 
-  for (const attempt of attempts) {
-    const result = faceLandmarker.detect(attempt.source);
-    if (result.faceLandmarks && result.faceLandmarks.length > 0) {
-      const landmarks = result.faceLandmarks[0];
-      const aligned = alignFace(attempt.source, landmarks, attempt.w, attempt.h);
-      const tensor = preprocess(aligned);
-      const feeds = {};
-      feeds[embedSession.inputNames[0]] = tensor;
-      const output = await embedSession.run(feeds);
-      const emb = output[embedSession.outputNames[0]].data;
-
-      let norm = 0;
-      for (let i = 0; i < emb.length; i++) norm += emb[i] * emb[i];
-      norm = Math.sqrt(norm);
-      const normed = Array.from(emb).map((v) => v / norm);
-
-      return { ok: true, embedding: normed };
+  const tileWidth = Math.max(1, Math.round(img.width * 0.65));
+  const tileHeight = Math.max(1, Math.round(img.height * 0.65));
+  const xPositions = [0, Math.round((img.width - tileWidth) / 2), img.width - tileWidth];
+  const yPositions = [0, Math.round((img.height - tileHeight) / 2), img.height - tileHeight];
+  const seen = new Set();
+  for (const y of yPositions) {
+    for (const x of xPositions) {
+      const key = `${x}:${y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const canvas = document.createElement("canvas");
+      canvas.width = tileWidth * 2;
+      canvas.height = tileHeight * 2;
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(
+        img,
+        x,
+        y,
+        tileWidth,
+        tileHeight,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+      attempts.push({ source: canvas, w: canvas.width, h: canvas.height, label: `tile_${x}_${y}` });
     }
   }
-  return { ok: false };
+
+  const failureCounts = {};
+  const failureDetails = {};
+  for (const attempt of attempts) {
+    const result = await runRecoveryAttempt(attempt.source, attempt.w, attempt.h, attempt.label);
+    if (result.ok) {
+      return {
+        ok: true,
+        embedding: result.embedding,
+        diagnostics: {
+          successfulAttempt: result.label,
+          failureCounts,
+        },
+      };
+    }
+    failureCounts[result.reason] = (failureCounts[result.reason] || 0) + 1;
+    if (result.detail) failureDetails[result.reason] = result.detail;
+  }
+
+  const failureReason = Object.entries(failureCounts)
+    .sort((a, b) => b[1] - a[1])[0]?.[0] || "unknown_failure";
+  return {
+    ok: false,
+    diagnostics: {
+      failureReason,
+      failureCounts,
+      failureDetails,
+      attemptCount: attempts.length,
+      imageWidth: img.width,
+      imageHeight: img.height,
+    },
+  };
 };
 </script>
 </body>

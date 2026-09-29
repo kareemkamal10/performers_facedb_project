@@ -135,6 +135,7 @@ async function main() {
   }
 
   const embeddingsById = {}; // id -> [ [512 floats], ... ] (one per successful image)
+  const reportsById = {};
   let cursor = 0;
 
   async function worker(page) {
@@ -153,10 +154,26 @@ async function main() {
           if (!embeddingsById[id]) embeddingsById[id] = [];
           embeddingsById[id].push(result.embedding);
         }
+        if (RECOVERY_MODE) {
+          if (!reportsById[id]) reportsById[id] = [];
+          reportsById[id].push({
+            path: filePath,
+            ok: !!(result && result.ok),
+            diagnostics: result && result.diagnostics ? result.diagnostics : {},
+          });
+        }
       } catch (err) {
-        // Treat any read/decode/inference error the same as "no face found" -
-        // this one image just doesn't contribute, the element isn't failed
-        // outright unless NONE of its images succeed.
+        if (RECOVERY_MODE) {
+          if (!reportsById[id]) reportsById[id] = [];
+          reportsById[id].push({
+            path: filePath,
+            ok: false,
+            diagnostics: {
+              failureReason: "worker_error",
+              detail: String(err && err.message ? err.message : err),
+            },
+          });
+        }
       }
     }
   }
@@ -172,7 +189,10 @@ async function main() {
   for (const item of items) {
     const embs = embeddingsById[item.id];
     if (!embs || embs.length === 0) {
-      output[item.id] = { ok: false };
+      output[item.id] = {
+        ok: false,
+        image_reports: reportsById[item.id] || [],
+      };
       continue;
     }
 
@@ -190,7 +210,12 @@ async function main() {
     const embedding = new Array(dim);
     for (let i = 0; i < dim; i++) embedding[i] = roundToFloat16(avg[i] / norm);
 
-    output[item.id] = { ok: true, embedding, num_images_used: embs.length };
+    output[item.id] = {
+      ok: true,
+      embedding,
+      num_images_used: embs.length,
+      image_reports: reportsById[item.id] || [],
+    };
   }
 
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(output));
