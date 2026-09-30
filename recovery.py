@@ -26,7 +26,6 @@ import logging
 import os
 import shutil
 import subprocess
-from collections import Counter
 
 import config
 import hf_sync
@@ -59,8 +58,8 @@ def _run_embedding_recovery(downloaded_map: dict) -> dict:
         "baseDir": config.FACE_EMBED_DIR,
         "concurrency": get_embed_concurrency(),
         "recoveryMode": True,
-        "minFaceDetectionConfidence": min(config.RECOVERY_MIN_FACE_CONFIDENCE, 0.1),
-        "minFacePresenceConfidence": min(config.RECOVERY_MIN_FACE_PRESENCE_CONFIDENCE, 0.1),
+        "minFaceDetectionConfidence": config.RECOVERY_MIN_FACE_CONFIDENCE,
+        "minFacePresenceConfidence": config.RECOVERY_MIN_FACE_PRESENCE_CONFIDENCE,
         "items": items,
     }
     manifest_path = os.path.join(config.KAGGLE_WORKING_DIR, "_recovery_manifest.json")
@@ -81,76 +80,6 @@ def _run_embedding_recovery(downloaded_map: dict) -> dict:
     )
     with open(output_path, "r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def _write_recovery_report(
-    report_path: str,
-    targets: list,
-    downloaded_map: dict,
-    failed_downloads: list,
-    embed_results: dict,
-    recovered: int,
-) -> None:
-    reason_counts = Counter()
-    lines = [
-        "Face DB recovery diagnostics",
-        "================================",
-        f"Target elements: {len(targets)}",
-        f"Recovered elements: {recovered}",
-        f"Remaining elements: {len(targets) - recovered}",
-        "Detector: MediaPipe FaceLandmarker (face_landmarker.task)",
-        "Embedding model: w600k_mbf.onnx",
-        f"Recovery detection confidence: {min(config.RECOVERY_MIN_FACE_CONFIDENCE, 0.1)}",
-        f"Recovery presence confidence: {min(config.RECOVERY_MIN_FACE_PRESENCE_CONFIDENCE, 0.1)}",
-        "",
-        "Failure summary",
-        "---------------",
-    ]
-    detail_lines = []
-
-    for item in failed_downloads:
-        reason_counts["download_error"] += 1
-        detail_lines.append(
-            f"DOWNLOAD_ERROR\tid={item.get('id')}\turl={item.get('url')}\t"
-            f"detail={item.get('error', '')}"
-        )
-
-    for element in targets:
-        element_id = element["id"]
-        result = embed_results.get(element_id) or {}
-        image_reports = result.get("image_reports", [])
-        for image_report in image_reports:
-            diagnostics = image_report.get("diagnostics") or {}
-            if image_report.get("ok"):
-                reason = "success"
-                detail = f"successful_attempt={diagnostics.get('successfulAttempt', '')}"
-            else:
-                reason = diagnostics.get("failureReason", "unknown_failure")
-                detail = (
-                    f"attempts={diagnostics.get('attemptCount', '')}; "
-                    f"failure_counts={diagnostics.get('failureCounts', {})}; "
-                    f"details={diagnostics.get('failureDetails', {})}"
-                )
-            reason_counts[reason] += 1
-            detail_lines.append(
-                f"{reason.upper()}\tid={element_id}\tpath={image_report.get('path', '')}\t{detail}"
-            )
-
-        if not image_reports and not downloaded_map.get(element_id):
-            reason_counts["no_downloaded_images"] += 1
-            detail_lines.append(f"NO_DOWNLOADED_IMAGES\tid={element_id}")
-
-    lines.extend(
-        [
-        *(f"{reason}: {count}" for reason, count in sorted(reason_counts.items())),
-        "",
-        "Per-image details",
-        "-----------------",
-        *detail_lines,
-        ]
-    )
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
 
 
 def main() -> None:
@@ -226,15 +155,6 @@ def main() -> None:
     os.makedirs(config.RESULT_OUTPUT_DIR, exist_ok=True)
     face_db_out = os.path.join(config.RESULT_OUTPUT_DIR, "face_db.json")
     excluded_out = os.path.join(config.RESULT_OUTPUT_DIR, "excluded.json")
-    report_out = os.path.join(config.RESULT_OUTPUT_DIR, "recovery_diagnostics.txt")
-    _write_recovery_report(
-        report_out,
-        targets,
-        downloaded_map,
-        failed,
-        embed_results,
-        recovered,
-    )
     with open(face_db_out, "w", encoding="utf-8") as f:
         json.dump(face_db, f, ensure_ascii=False)
     with open(excluded_out, "w", encoding="utf-8") as f:
@@ -246,12 +166,7 @@ def main() -> None:
 
     hf_sync.upload_file_generic(face_db_out, f"{config.HF_RESULT_FOLDER_NAME}/face_db.json")
     hf_sync.upload_file_generic(excluded_out, f"{config.HF_RESULT_FOLDER_NAME}/excluded.json")
-    hf_sync.upload_file_generic(
-        report_out, f"{config.HF_RESULT_FOLDER_NAME}/recovery_diagnostics.txt"
-    )
-    logger.info(
-        "Updated face_db.json, excluded.json, and recovery_diagnostics.txt uploaded to the HF dataset."
-    )
+    logger.info("Updated face_db.json and excluded.json uploaded to the HF dataset.")
 
 
 if __name__ == "__main__":

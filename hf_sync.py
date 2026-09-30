@@ -118,6 +118,22 @@ def upload_result_output() -> None:
     logger.info("face_db_output uploaded to HF dataset")
 
 
+def upload_folder_generic(local_dir: str, path_in_repo: str) -> None:
+    """Generic whole-folder uploader for anything that doesn't fit
+    upload_result_output()'s fixed face_db_output/ shape (e.g. the LanceDB
+    output, which is its own separate folder on the dataset)."""
+    _require_creds()
+    upload_folder(
+        folder_path=local_dir,
+        path_in_repo=path_in_repo,
+        repo_id=config.HF_DATASET_REPO_ID,
+        repo_type="dataset",
+        token=config.HF_TOKEN,
+        commit_message=f"Upload {path_in_repo}",
+    )
+    logger.info("%s uploaded to HF dataset", path_in_repo)
+
+
 def upload_file_generic(local_path: str, path_in_repo: str) -> None:
     """Generic single-file uploader for anything that doesn't fit the
     whole-folder upload_result_output() shape."""

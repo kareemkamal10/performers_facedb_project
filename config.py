@@ -74,6 +74,14 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "")
 # Separate folder on the dataset from the older dedup pipeline's result_output/
 HF_RESULT_FOLDER_NAME = "face_db_output"
 
+# ---- LanceDB conversion (build_lancedb.py) ----
+# Converts the flat face_db.json into a disk-based, memory-mapped LanceDB
+# table + cosine vector index - the "serve this without holding the whole
+# embedding matrix in RAM" option, for whenever the search backend is built.
+LANCEDB_LOCAL_DIR = os.path.join(KAGGLE_WORKING_DIR, "face_lancedb")
+LANCEDB_TABLE_NAME = "performers"
+HF_LANCEDB_FOLDER_NAME = "face_lancedb_output"
+
 # ---- Recovery pass (excluded.json follow-up) ----
 # Used only by recovery.py, for elements that got no face on the first pass.
 # Two different failure modes get addressed (see build_page.html's

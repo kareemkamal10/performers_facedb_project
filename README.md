@@ -109,6 +109,24 @@ Run it with `kaggle_cell_recovery.py` (same shape as `kaggle_cell.py`, just
 calls `recovery.py` instead of `main.py`) any time after a full run — it's
 a small, one-off pass, safe to run repeatedly.
 
+## LanceDB conversion (for serving search without loading everything into RAM)
+
+`build_lancedb.py` converts `face_db.json` into a **LanceDB** table — a
+disk-based, memory-mapped vector index (same lineage as Parquet/Arrow) that
+lets a search touch only a small relevant slice of the data instead of
+holding the whole ~118k × 512 embedding matrix in RAM. It:
+
+1. Fetches the latest `face_db.json` from the HF dataset.
+2. Builds a LanceDB table (`id`, `vector`, `num_images_used` columns).
+3. Builds a cosine-distance IVF-PQ index on it.
+4. Uploads the whole resulting LanceDB directory to its own folder on the
+   dataset (`config.HF_LANCEDB_FOLDER_NAME`, separate from `face_db_output/`).
+
+This is a standalone, pure-Python step — no image downloading, no
+Node/Puppeteer/Chrome involved. Run it with `kaggle_cell_lancedb.py` any
+time after `main.py` or `recovery.py` updates `face_db.json`, to refresh the
+LanceDB copy.
+
 ## What changed from the dedup pipeline
 
 - **Removed entirely**: `visual_dedup.py`, `quality.py`, `webp_analysis.py`,
