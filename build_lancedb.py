@@ -23,6 +23,7 @@ import logging
 import os
 import shutil
 
+import pyarrow as pa
 import lancedb
 from lancedb.index import IvfPq
 
@@ -57,13 +58,29 @@ def main() -> None:
         for item in face_db
     ]
 
+    embedding_dim = len(rows[0]["vector"])
+    vector_values = [value for row in rows for value in row["vector"]]
+    arrow_data = pa.table(
+        {
+            "id": pa.array([row["id"] for row in rows], type=pa.string()),
+            "vector": pa.FixedSizeListArray.from_arrays(
+                pa.array(vector_values, type=pa.float16()), embedding_dim
+            ),
+            "num_images_used": pa.array(
+                [row["num_images_used"] for row in rows], type=pa.int64()
+            ),
+        }
+    )
+
     if os.path.exists(config.LANCEDB_LOCAL_DIR):
         shutil.rmtree(config.LANCEDB_LOCAL_DIR)
     os.makedirs(os.path.dirname(config.LANCEDB_LOCAL_DIR), exist_ok=True)
 
     logger.info("Building LanceDB table at %s ...", config.LANCEDB_LOCAL_DIR)
     db = lancedb.connect(config.LANCEDB_LOCAL_DIR)
-    table = db.create_table(config.LANCEDB_TABLE_NAME, data=rows, mode="overwrite")
+    table = db.create_table(
+        config.LANCEDB_TABLE_NAME, data=arrow_data, mode="overwrite"
+    )
 
     logger.info("Building the cosine-distance vector index (can take a bit)...")
     table.create_index("vector", config=IvfPq(distance_type="cosine"))
